@@ -6,6 +6,11 @@ var parse = require('co-body');
 //规定了使用的模板引擎，支持‘ejs’,'jade','swig'这三种
 var render = require('./lib/render');
 
+//用来对专门的url进行权限管理
+var mount = require('koa-mount');
+//权限管理
+var auth = require('koa-basic-auth');
+
 //代替数据库
 var posts = [];
 
@@ -15,6 +20,37 @@ var app = koa();
 
 //用来得到路径的中间件
 var route = require('koa-route');
+
+
+//处理没有页面的情况
+app.use(pageNotFound);
+
+////处理没有页面的情况
+//app.use(pageNotFound);
+//授权失败
+//这个必须放在上面
+app.use(function *(next){
+    try {
+        yield next;
+    } catch (err) {
+        if (401 == err.status) {
+            this.status = 401;
+            this.set('WWW-Authenticate', 'Basic');
+            this.body = 'cant haz that';
+        } else {
+            throw err;
+        }
+    }
+});
+////对需求页面进行授权
+app.use(mount('/post/new', auth({ name: 'tobi', pass: 'ferret' })));
+//处理简单的授权
+//app.use(auth({ name: 'tj', pass: 'tobi' }));
+
+
+
+
+
 
 
 //打印访问的log
@@ -28,9 +64,13 @@ app.use(route.get('/post/new', add));
 app.use(route.get('/post/:id', show));
 app.use(route.post('/post', create));
 
+
+
+
 function *list() {
     //对body进行设置就是返回的内容了
     this.body = yield render('list', { posts: posts });
+    console.log(22);
 }
 
 function *add() {
@@ -53,8 +93,29 @@ function *create() {
     var id = posts.push(post) - 1;
     post.created_at = new Date;
     post.id = id;
-    //然后直接重定位到主页
+    //重定位语句
     this.redirect('/');
+}
+
+function *pageNotFound(next){
+    yield next;
+    if (404 != this.status) return;
+    this.status = 404;
+    //判断需要的结果是页面还是json
+    switch (this.accepts('html', 'json')) {
+        case 'html':
+            this.type = 'html';
+            this.body = '<p>Page Not Found</p>';
+            break;
+        case 'json':
+            this.body = {
+                message: 'Page Not Found'
+            };
+            break;
+        default:
+            this.type = 'text';
+            this.body = 'Page Not Found';
+    }
 }
 
 //监听3000端口,这里是可以监听多个端口的
